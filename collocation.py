@@ -130,7 +130,6 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         return lambda t: representation(t, sol.x[:K+1] if t < element_1[1] else sol.x[K+1:])
 
     elif N == 2 and representation_str == "lagrange":
-        representation = monomial_representation
         time_grid = np.linspace(t0, tf, N+1)
         element_1 = (time_grid[0], time_grid[1])
         element_2 = (time_grid[1], time_grid[2])
@@ -152,10 +151,10 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
             return system
         
         functosolve = create_system_of_eqns2(t0, x0, dxdt)
-        ig = np.ones(2*K+2)  # initial guess
+        ig = np.ones(N*(K+1))  # initial guess
         ig[0] = x0  # This works for scalars but not systems of ODEs.
         ig[1] = dxdt(t0, x0)
-        ig[K+1] = x0 + ig[1] * (element_2[0] - element_1[0])
+        # ig[K+1] = x0 + ig[1] * (element_2[0] - element_1[0])
         sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
         assert sol.success, "sol.success is false, the solution did not converge"
         # TODO: Obviously I will need a more complex solution for general N elements
