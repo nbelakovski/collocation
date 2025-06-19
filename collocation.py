@@ -159,3 +159,53 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         assert sol.success, "sol.success is false, the solution did not converge"
         # TODO: Obviously I will need a more complex solution for general N elements
         return lambda t: representation_1(t, sol.x[:K+1]) if t < element_1[1] else representation_2(t, sol.x[K+1:])
+    elif N >= 2 and representation_str == "lagrange":
+
+        time_grid = np.linspace(t0, tf, N+1)
+        elements = list(zip(time_grid[:-1], time_grid[1:]))
+        pts_repr_grad = []
+        for element in elements:
+            collocation_points = scaled_collocation_points(K, element[0], element[1])
+            representation = create_lagrange_representation(np.hstack((element[0], collocation_points)))
+            reprgrad = grad(representation)
+            pts_repr_grad.append([collocation_points, representation, reprgrad])
+        def create_system_of_eqns2(dxdt, x0, t0, tf, N):
+
+            def system(params):
+                pts, repres, reprgrad = pts_repr_grad[0]
+                params1 = params[:K+1]
+                eq1 = [repres(t0, params[:K+1]) - x0]
+                eq21_to_n1 = [reprgrad(ti, params1) - dxdt(ti, repres(ti, params1)) for ti in pts]
+                eqs = eq1 + eq21_to_n1
+                for i in range(1, N):
+                    params1 = params[(K+1)*(i-1):(K+1)*i]
+                    params2 = params[(K+1)*i:(K+1)*(i+1)]
+                    pts1, repres1, reprgrad1 = pts_repr_grad[i-1]
+                    pts2, repres2, reprgrad2 = pts_repr_grad[i]
+                    eq_n1_to_22 = [repres1(elements[i-1][1], params1) - repres2(elements[i][0], params2)]
+                    eq22_to_n2 = [reprgrad2(ti, params2) - dxdt(ti, repres2(ti, params2)) for ti in pts2]
+                    eqs += eq_n1_to_22
+                    eqs += eq22_to_n2
+                return eqs
+            return system
+        
+        functosolve = create_system_of_eqns2(dxdt, x0, t0, tf, N)
+        ig = np.ones(N*(K+1))  # initial guess
+        ig[0] = x0  # This works for scalars but not systems of ODEs.
+        ig[1] = dxdt(t0, x0)
+        # ig[K+1] = x0 + ig[1] * (element_2[0] - element_1[0])
+        sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
+        assert sol.success, "sol.success is false, the solution did not converge"
+        # TODO: Obviously I will need a more complex solution for general N elements
+        def final_representation(t):
+            if t <= elements[0][0]:
+                index = 0
+            elif t >= elements[-1][1]:
+                index = N-1
+            else:
+                for index, element in enumerate(elements):
+                    if element[0] <= t <= element[1]:
+                        break
+            params = sol.x[(K+1)*index:(K+1)*(index+1)]
+            return pts_repr_grad[index][1](t, params)
+        return final_representation

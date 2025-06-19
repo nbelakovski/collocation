@@ -33,7 +33,7 @@ def analytical(t):
 t0 = 0
 tf = 4
 breakpoint()
-solution = solve(dzdt, analytical(t0), t0, tf, K=10, representation_str='lagrange', N=1)
+solution = solve(dzdt, analytical(t0), t0, tf, K=3, representation_str='lagrange', N=5)
 # New problem now: Why does this do so poorly on [2, 4] for this problem? It should be
 # so easy, it's practically a fucking line. And yet not even a linear model captures it. wtf.
 # Update: It seems the initial guess was poor. I should base it on making sure that the
