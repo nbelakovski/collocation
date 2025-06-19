@@ -52,6 +52,15 @@ def create_system_of_eqns(t0, x0, dxdt, collocation_points, representation):
         return eq1 + eq2_to_n
     return system
 
+
+def scaled_collocation_points(K, t0, tf):
+    collocation_points, weights = roots_legendre(K)
+    collocation_points += 1  # Shift from [-1, 1] to [0, 2]
+    collocation_points *= (tf - t0)/2  # scale to [0, (tf-t0)]
+    collocation_points += t0  # then shift to [t0, tf]
+    return collocation_points
+
+
 class Dynamics(Protocol):
     def __call__(self, t: float, z: list[float] | float) -> list[float] | float:
         ...
@@ -66,13 +75,10 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
     # representations, and of course that means more coefficients.
     if N == 1 and representation_str == 'monomial':
         representation = monomial_representation
-        collocation_points, weights = roots_legendre(K-1)
-        collocation_points += 1  # Shift from [-1, 1] to [0, 2]
-        collocation_points *= (tf - t0)/2  # scale to [0, (tf-t0)]
-        collocation_points += t0  # then shift to [t0, tf]
+        collocation_points = scaled_collocation_points(K, t0, tf)
         print(collocation_points)
         # roots = np.linspace(t0+(tf-t0)/K, tf, K-1)
-        ig = np.zeros(K)  # initial guess
+        ig = np.zeros(K+1)  # initial guess
         ig[0] = x0  # This works for scalars but not systems of ODEs.
         ig[1] = dxdt(t0, x0)
         
@@ -83,10 +89,7 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         assert sol.success, "sol.success is false, the solution did not converge"
         return lambda t: representation(t, sol.x)
     elif N == 1 and representation_str == "lagrange":
-        collocation_points, weights = roots_legendre(K)
-        collocation_points += 1  # Shift from [-1, 1] to [0, 2]
-        collocation_points *= (tf - t0)/2  # scale to [0, (tf-t0)]
-        collocation_points += t0  # then shift to [t0, tf]
+        collocation_points = scaled_collocation_points(K, t0, tf)
         print(collocation_points)
         representation = create_lagrange_representation(np.hstack((t0, collocation_points)))
 
@@ -97,23 +100,18 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         sol = root(functosolve, x0=ig, jac=jacfwd(functosolve), method='hybr', tol=1e-3)
         assert sol.success, "sol.success is false, the solution did not converge"
         return lambda t: representation(t, sol.x)
-    elif N == 2:
+    elif N == 2 and representation_str == "monomial":
+        representation = monomial_representation
         time_grid = np.linspace(t0, tf, N+1)
         element_1 = (time_grid[0], time_grid[1])
         element_2 = (time_grid[1], time_grid[2])
-        collocation_points_1, weights = roots_legendre(K-1)
-        collocation_points_1 += 1  # Shift from [-1, 1] to [0, 2]
-        collocation_points_1 *= (element_1[1] - element_1[0])/2  # scale to [0, (tf-t0)]
-        collocation_points_1 += element_1[0]  # then shift to [t0, tf]
-        collocation_points_2, weights = roots_legendre(K-1)
-        collocation_points_2 += 1  # Shift from [-1, 1] to [0, 2]
-        collocation_points_2 *= (element_2[1] - element_2[0])/2  # scale to [0, (tf-t0)]
-        collocation_points_2 += element_2[0]  # then shift to [t0, tf]
+        collocation_points_1 = scaled_collocation_points(K, element_1[0], element_1[1])
+        collocation_points_2 = scaled_collocation_points(K, element_2[0], element_2[1])
 
         def create_system_of_eqns2(t0, x0, dxdt, collocation_points, representation):
             reprgrad = grad(representation)
             def system(params):
-                params1, params2 = (params[:K], params[K:])
+                params1, params2 = (params[:K+1], params[K+1:])
                 eq1 = [representation(t0, params1) - x0]
                 eq21_to_n1 = [reprgrad(ti, params1) - dxdt(ti, representation(ti, params1)) for ti in collocation_points_1]
                 eq_n1_to_22 = [representation(element_1[1], params1) - representation(element_2[0], params2)]
@@ -122,11 +120,43 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
             return system
         
         functosolve = create_system_of_eqns2(t0, x0, dxdt, None, representation)
-        ig = np.ones(2*K)  # initial guess
+        ig = np.ones(2*K+2)  # initial guess
         ig[0] = x0  # This works for scalars but not systems of ODEs.
         ig[1] = dxdt(t0, x0)
-        ig[K] = x0 + ig[1] * (element_2[0] - element_1[0])
+        ig[K+1] = x0 + ig[1] * (element_2[0] - element_1[0])
         sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
         assert sol.success, "sol.success is false, the solution did not converge"
         # TODO: Obviously I will need a more complex solution for general N elements
-        return lambda t: representation(t, sol.x[:K] if t < element_1[1] else sol.x[K:])
+        return lambda t: representation(t, sol.x[:K+1] if t < element_1[1] else sol.x[K+1:])
+
+    elif N == 2 and representation_str == "lagrange":
+        representation = monomial_representation
+        time_grid = np.linspace(t0, tf, N+1)
+        element_1 = (time_grid[0], time_grid[1])
+        element_2 = (time_grid[1], time_grid[2])
+        collocation_points_1 = scaled_collocation_points(K, element_1[0], element_1[1])
+        representation_1 = create_lagrange_representation(np.hstack((t0, collocation_points_1)))
+        reprgrad_1 = grad(representation_1)
+        collocation_points_2 = scaled_collocation_points(K, element_2[0], element_2[1])
+        representation_2 = create_lagrange_representation(np.hstack((element_2[0], collocation_points_2)))
+        reprgrad_2 = grad(representation_2)
+
+        def create_system_of_eqns2(t0, x0, dxdt):
+            def system(params):
+                params1, params2 = (params[:K+1], params[K+1:])
+                eq1 = [representation_1(t0, params1) - x0]
+                eq21_to_n1 = [reprgrad_1(ti, params1) - dxdt(ti, representation_1(ti, params1)) for ti in collocation_points_1]
+                eq_n1_to_22 = [representation_1(element_1[1], params1) - representation_2(element_2[0], params2)]
+                eq22_to_n2 = [reprgrad_2(ti, params2) - dxdt(ti, representation_2(ti, params2)) for ti in collocation_points_2]
+                return eq1 + eq21_to_n1 + eq_n1_to_22 + eq22_to_n2
+            return system
+        
+        functosolve = create_system_of_eqns2(t0, x0, dxdt)
+        ig = np.ones(2*K+2)  # initial guess
+        ig[0] = x0  # This works for scalars but not systems of ODEs.
+        ig[1] = dxdt(t0, x0)
+        ig[K+1] = x0 + ig[1] * (element_2[0] - element_1[0])
+        sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
+        assert sol.success, "sol.success is false, the solution did not converge"
+        # TODO: Obviously I will need a more complex solution for general N elements
+        return lambda t: representation_1(t, sol.x[:K+1]) if t < element_1[1] else representation_2(t, sol.x[K+1:])
