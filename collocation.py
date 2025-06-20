@@ -159,7 +159,7 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         assert sol.success, "sol.success is false, the solution did not converge"
         # TODO: Obviously I will need a more complex solution for general N elements
         return lambda t: representation_1(t, sol.x[:K+1]) if t < element_1[1] else representation_2(t, sol.x[K+1:])
-    elif N >= 2 and representation_str == "lagrange":
+    elif N > 2 and representation_str == "lagrange":
 
         time_grid = np.linspace(t0, tf, N+1)
         elements = list(zip(time_grid[:-1], time_grid[1:]))
@@ -193,10 +193,8 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         ig = np.ones(N*(K+1))  # initial guess
         ig[0] = x0  # This works for scalars but not systems of ODEs.
         ig[1] = dxdt(t0, x0)
-        # ig[K+1] = x0 + ig[1] * (element_2[0] - element_1[0])
         sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
         assert sol.success, "sol.success is false, the solution did not converge"
-        # TODO: Obviously I will need a more complex solution for general N elements
         def final_representation(t):
             if t <= elements[0][0]:
                 index = 0
@@ -208,4 +206,52 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
                         break
             params = sol.x[(K+1)*index:(K+1)*(index+1)]
             return pts_repr_grad[index][1](t, params)
+        return final_representation
+    
+    elif N > 2 and representation_str == "monomial":
+        representation = monomial_representation
+
+        time_grid = np.linspace(t0, tf, N+1)
+        elements = list(zip(time_grid[:-1], time_grid[1:]))
+        def create_system_of_eqns2(dxdt, x0, t0, tf, N):
+            reprgrad = grad(representation)
+            def system(params):
+                # We set up the equations for the first element manually, because that's
+                # where we have to bring in the initial condition
+                pts = scaled_collocation_points(K, elements[0][0], elements[0][1])
+                params1 = params[:K+1]
+                eq1 = [representation(t0, params[:K+1]) - x0]
+                eq21_to_n1 = [reprgrad(ti, params1) - dxdt(ti, representation(ti, params1)) for ti in pts]
+                eqs = eq1 + eq21_to_n1
+                # For the rest of the elemetns we can do it in a loop
+                for i in range(1, N):
+                    params1 = params[(K+1) * (i-1) : (K+1) * i]
+                    params2 = params[(K+1) * i     : (K+1) * (i+1)]
+                    # Set the endpoint of element i-1 to be equal to the start of element i
+                    eq_n1_to_22 = [representation(elements[i-1][1], params1) - representation(elements[i][0], params2)]
+                    # Then set up the equations for element i
+                    pts = scaled_collocation_points(K, elements[i][0], elements[i][1])
+                    eq22_to_n2 = [reprgrad(ti, params2) - dxdt(ti, representation(ti, params2)) for ti in pts]
+                    eqs += eq_n1_to_22
+                    eqs += eq22_to_n2
+                return eqs
+            return system
+        
+        functosolve = create_system_of_eqns2(dxdt, x0, t0, tf, N)
+        ig = np.zeros(N*(K+1))  # initial guess
+        ig[0] = x0  # This works for scalars but not systems of ODEs.
+        ig[1] = dxdt(t0, x0)
+        sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
+        assert sol.success, "sol.success is false, the solution did not converge"
+        def final_representation(t):
+            if t <= elements[0][0]:
+                index = 0
+            elif t >= elements[-1][1]:
+                index = N-1
+            else:
+                for index, element in enumerate(elements):
+                    if element[0] <= t <= element[1]:
+                        break
+            params = sol.x[(K+1)*index:(K+1)*(index+1)]
+            return representation(t, params)
         return final_representation
