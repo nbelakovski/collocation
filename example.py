@@ -32,18 +32,19 @@ import matplotlib.pyplot as plt
 plt.clf()
 
 def dzdt(t, z):# return z**2 - 2*z + 1
-    return [z[0]]
-    # return [z[1], -z[0]]
+    # return z[0]
+    return [z[1], -z[0]]
 
 def analytical(t):
     return (4*t - 3)/(4*t + 1)
 
 t0 = 0
 tf = 1
-x0 = np.array([1])
+x0 = np.array([1, 0])
 breakpoint()
-solution = solve(dzdt, x0, t0, tf, K=4, representation_str='monomial', N=1)
+solution = solve(dzdt, x0, t0, tf, K=3, representation_str='monomial', N=1)
 
+# x0 = np.atleast_1d(x0)
 solivp = solve_ivp(dzdt, [t0, tf], x0, t_eval=np.linspace(t0, tf))
 
 

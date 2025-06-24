@@ -76,7 +76,13 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
     if N == 1 and representation_str == 'monomial':
         representation = monomial_representation
         collocation_points = scaled_collocation_points(K, t0, tf)
+        colloc_matrix = jnp.ones((K+1, K+1))
+        colloc_matrix = colloc_matrix.at[:, 0].set([t0**i for i in range(K+1)])
+        for i in range(K+1):
+            colloc_matrix = colloc_matrix.at[i, 1:].set(collocation_points**i)
         print(collocation_points)
+
+        print("Colloc matrix", colloc_matrix)
         # roots = np.linspace(t0+(tf-t0)/K, tf, K-1)
         numvars = len(x0)
         ig = np.ones((K+1, numvars))  # initial guess
@@ -88,30 +94,13 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         def create_system_of_eqns_monmial_1(t0, x0, dxdt, collocation_points, representation):
             reprgrad = grad(representation)
             def system(params):
-                # params = params.reshape((K+1, numvars))
-                # eq1 = [representation(t0, params[:, i]) - x0[i] for i in range(numvars)]
-                # dxdt_ti = np.array([dxdt(ti, [representation(ti, params[:, i]) for i in range(numvars)]) for ti in collocation_points])
-                # reprgrad_ti = np.zeros((K, numvars))
-                # for i in range(K):
-                #     for j in range(numvars):
-                #         reprgrad_ti[i, j] = reprgrad(collocation_points[i], params[:, j])
-                # print(dxdt_ti.shape)
-                # print(reprgrad_ti.shape)
-                # print("----")
-                # result = np.zeros((K+1, numvars))
-                # result[0, :] = eq1
-                # result[1:, :] = reprgrad_ti - dxdt_ti
-                # return result.reshape(numvars * (K+1))
                 result = jnp.zeros(numvars*(K+1))
                 params = params.reshape((K+1, numvars))
-                result = result.at[:numvars].set([representation(t0, params[:, i]) - x0[i] for i in range(numvars)])
-                # colloc1 = collocation_points[0]
-                # dxdt_1 = dxdt(colloc1, [representation(colloc1, params[:, i]) for i in range(numvars)])  # This is of length N
-                # reprgrad_1 = np.array([reprgrad(colloc1, params[:, i]) for i in range(numvars)])
-                # result[numvars:numvars*2] = reprgrad_1 - dxdt_1
+                xtilde = params.T@colloc_matrix  # (numvars, K+1)
+                result = result.at[:numvars].set(xtilde[:, 0] - x0)
                 for i in range(len(collocation_points)):
                     colloc1 = collocation_points[i]
-                    dxdt_1 = jnp.array(dxdt(colloc1, [representation(colloc1, params[:, j]) for j in range(numvars)]))  # This is of length N
+                    dxdt_1 = jnp.array(dxdt(colloc1, xtilde[:, i+1]))  # This is of length N
                     reprgrad_1 = jnp.array([reprgrad(colloc1, params[:, j]) for j in range(numvars)])
                     result = result.at[numvars*(i+1):numvars*(i+2)].set(reprgrad_1 - dxdt_1)
                 return result
