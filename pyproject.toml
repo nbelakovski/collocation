@@ -1,0 +1,24 @@
+[project]
+name = "collocation"
+version = "0.1.0"
+description = "Implementation of collocation methods, possible for use in optimal control"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+	"jax",
+  "numpy",
+	"scipy",
+]
+
+[project.optional-dependencies]
+notebook = [
+  "ipykernel",
+	"ipympl",
+	"ipywidgets",
+	"marimo",
+	"matplotlib",
+]
+
+test = [
+  "pytest"
+]
