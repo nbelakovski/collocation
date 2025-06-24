@@ -15,7 +15,7 @@
 # %%
 
 # To sync the local venv with these requirements, run:
-#!VIRTUAL_ENV=.venv uv sync --script example.py --active
+# #!VIRTUAL_ENV=.venv uv sync --script example.py --active
 #!%reset -f
 #!%load_ext autoreload
 #!%autoreload now
@@ -23,27 +23,37 @@
 
 
 import numpy as np
+import jax.numpy as jnp
+from math import sin
 from collocation import solve
+from scipy.integrate import solve_ivp
 
 import matplotlib.pyplot as plt
 plt.clf()
 
-def dzdt(t, z):
-    return z**2 - 2*z + 1
+def dzdt(t, z):# return z**2 - 2*z + 1
+    return [z[0]]
+    # return [z[1], -z[0]]
 
 def analytical(t):
     return (4*t - 3)/(4*t + 1)
 
 t0 = 0
-tf = 4
-solution = solve(dzdt, analytical(t0), t0, tf, K=4, representation_str='monomial', N=5)
+tf = 1
+x0 = np.array([1])
+breakpoint()
+solution = solve(dzdt, x0, t0, tf, K=4, representation_str='monomial', N=1)
 
-plt.plot(t:=np.linspace(t0, tf), analytical(t), color='b')
-plt.plot(t, [solution(ti) for ti in t], color='r')
+solivp = solve_ivp(dzdt, [t0, tf], x0, t_eval=np.linspace(t0, tf))
+
+
+plt.plot(solivp.t, solivp.y[0], color='b', label="ground truth")
+plt.plot(solivp.t, [solution(ti)[0] for ti in solivp.t], color='r', linestyle="--")
 plt.grid()
+plt.legend()
 plt.show()
 
 from scipy.integrate import quad
 
-error = quad(lambda t: np.abs(solution(t) - analytical(t)), 0, 1)
-print("Total integrated error", error[0])
+# error = quad(lambda t: np.abs(solution(t) - analytical(t)), 0, 1)
+# print("Total integrated error", error[0])

@@ -78,16 +78,53 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         collocation_points = scaled_collocation_points(K, t0, tf)
         print(collocation_points)
         # roots = np.linspace(t0+(tf-t0)/K, tf, K-1)
-        ig = np.zeros(K+1)  # initial guess
-        ig[0] = x0  # This works for scalars but not systems of ODEs.
-        ig[1] = dxdt(t0, x0)
+        numvars = len(x0)
+        ig = np.ones((K+1, numvars))  # initial guess
+        ig[0, :] = x0  # This works for scalars but not systems of ODEs.
+        print("aasdf", dxdt(t0, x0), "|", ig[1, :])
+        ig[1, :] = dxdt(t0, x0)
+        print("qwer", numvars)
         
-
+        def create_system_of_eqns_monmial_1(t0, x0, dxdt, collocation_points, representation):
+            reprgrad = grad(representation)
+            def system(params):
+                # params = params.reshape((K+1, numvars))
+                # eq1 = [representation(t0, params[:, i]) - x0[i] for i in range(numvars)]
+                # dxdt_ti = np.array([dxdt(ti, [representation(ti, params[:, i]) for i in range(numvars)]) for ti in collocation_points])
+                # reprgrad_ti = np.zeros((K, numvars))
+                # for i in range(K):
+                #     for j in range(numvars):
+                #         reprgrad_ti[i, j] = reprgrad(collocation_points[i], params[:, j])
+                # print(dxdt_ti.shape)
+                # print(reprgrad_ti.shape)
+                # print("----")
+                # result = np.zeros((K+1, numvars))
+                # result[0, :] = eq1
+                # result[1:, :] = reprgrad_ti - dxdt_ti
+                # return result.reshape(numvars * (K+1))
+                result = jnp.zeros(numvars*(K+1))
+                params = params.reshape((K+1, numvars))
+                result = result.at[:numvars].set([representation(t0, params[:, i]) - x0[i] for i in range(numvars)])
+                # colloc1 = collocation_points[0]
+                # dxdt_1 = dxdt(colloc1, [representation(colloc1, params[:, i]) for i in range(numvars)])  # This is of length N
+                # reprgrad_1 = np.array([reprgrad(colloc1, params[:, i]) for i in range(numvars)])
+                # result[numvars:numvars*2] = reprgrad_1 - dxdt_1
+                for i in range(len(collocation_points)):
+                    colloc1 = collocation_points[i]
+                    dxdt_1 = jnp.array(dxdt(colloc1, [representation(colloc1, params[:, j]) for j in range(numvars)]))  # This is of length N
+                    reprgrad_1 = jnp.array([reprgrad(colloc1, params[:, j]) for j in range(numvars)])
+                    result = result.at[numvars*(i+1):numvars*(i+2)].set(reprgrad_1 - dxdt_1)
+                return result
+            return system
         
-        functosolve = create_system_of_eqns(t0, x0, dxdt, collocation_points, representation)
+        
+        functosolve = create_system_of_eqns_monmial_1(t0, x0, dxdt, collocation_points, representation)
+        functosolve(ig)
         sol = root(functosolve, x0=ig, jac=jacfwd(functosolve), method='hybr', tol=1e-3)
+        print(sol)
         assert sol.success, "sol.success is false, the solution did not converge"
-        return lambda t: representation(t, sol.x)
+        sol.x = sol.x.reshape((K+1, numvars))
+        return lambda t: [representation(t, sol.x[:, i]) for i in range(numvars)]
     elif N == 1 and representation_str == "lagrange":
         collocation_points = scaled_collocation_points(K, t0, tf)
         print(collocation_points)
@@ -162,6 +199,7 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
     elif N > 2 and representation_str == "lagrange":
 
         time_grid = np.linspace(t0, tf, N+1)
+        print(f'{time_grid=}')
         elements = list(zip(time_grid[:-1], time_grid[1:]))
         pts_repr_grad = []
         for element in elements:
@@ -190,9 +228,8 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
             return system
         
         functosolve = create_system_of_eqns2(dxdt, x0, t0, tf, N)
-        ig = np.ones(N*(K+1))  # initial guess
+        ig = -np.ones(N*(K+1))  # initial guess
         ig[0] = x0  # This works for scalars but not systems of ODEs.
-        ig[1] = dxdt(t0, x0)
         sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
         assert sol.success, "sol.success is false, the solution did not converge"
         def final_representation(t):
@@ -213,12 +250,14 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
 
         time_grid = np.linspace(t0, tf, N+1)
         elements = list(zip(time_grid[:-1], time_grid[1:]))
+        print(elements)
         def create_system_of_eqns2(dxdt, x0, t0, tf, N):
             reprgrad = grad(representation)
             def system(params):
                 # We set up the equations for the first element manually, because that's
                 # where we have to bring in the initial condition
-                pts = scaled_collocation_points(K, elements[0][0], elements[0][1])
+                # pts = scaled_collocation_points(K, elements[0][0], elements[0][1])
+                pts = np.linspace(elements[0][0], elements[0][1], K)
                 params1 = params[:K+1]
                 eq1 = [representation(t0, params[:K+1]) - x0]
                 eq21_to_n1 = [reprgrad(ti, params1) - dxdt(ti, representation(ti, params1)) for ti in pts]
@@ -243,6 +282,7 @@ def solve(dxdt: Dynamics, x0, t0, tf, K, representation_str: str, N=2):  # dxdt 
         ig[1] = dxdt(t0, x0)
         sol = root(functosolve, x0=ig, jac=jacrev(functosolve), method='hybr', tol=1e-3)
         assert sol.success, "sol.success is false, the solution did not converge"
+        print("Coefficients: ", ", ".join([str(e) for e in sol.x]))
         def final_representation(t):
             if t <= elements[0][0]:
                 index = 0
