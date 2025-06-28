@@ -1,22 +1,3 @@
-# /// script
-# requires-python = ">=3.12.2"
-# dependencies = [
-#     "ipykernel",
-#     "numpy",
-#     "matplotlib",
-#     "scipy",
-#     "jax",
-# ]
-# ///
-
-# %%
-
-# To sync the local venv with these requirements, run:
-#!VIRTUAL_ENV=.venv uv sync --script collocation.py --active
-#!%reset -f
-
-# %% Here we start the generic code
-
 import numpy as np
 import jax.numpy as jnp
 from scipy.special import roots_legendre

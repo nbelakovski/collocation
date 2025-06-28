@@ -1,22 +1,8 @@
-# /// script
-# requires-python = ">=3.12.2"
-# dependencies = [
-#     "ipykernel",
-#     "numpy",
-#     "matplotlib",
-#     "scipy",
-#     "jax",
-#     "marimo",
-#     "ipywidgets",
-#     "ipympl"
-# ]
-# ///
-
 # %%
 
 # To sync the local venv with these requirements, run:
-# #!VIRTUAL_ENV=.venv uv sync --script example.py --active
-#!%reset -f
+#!uv sync --all-extras
+#!%reset_selective -f ^(?!(debugpy|get_ipython|os|trace_this_thread)$).*$
 #!%load_ext autoreload
 #!%autoreload now
 #!%matplotlib widget
@@ -41,7 +27,6 @@ def analytical(t):
 t0 = 0
 tf = 1
 x0 = np.array([1, 0])
-breakpoint()
 solution = solve(dzdt, x0, t0, tf, K=3, representation_str='monomial', N=1)
 
 # x0 = np.atleast_1d(x0)
